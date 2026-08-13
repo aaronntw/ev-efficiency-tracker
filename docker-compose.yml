@@ -1,0 +1,15 @@
+services:
+  ev-tracker:
+    image: ev-efficiency-tracker:local
+    build: .
+    container_name: ev-efficiency-tracker
+    ports:
+      - "4886:80"
+    volumes:
+      - ./data:/data
+    environment:
+      APP_VERSION: "1.4.2"
+      DB_TYPE: "sqlite"
+      SQLITE_PATH: "/data/ev_tracker.db"
+      WEB_AUTH_ENABLED: "false"
+    restart: unless-stopped
