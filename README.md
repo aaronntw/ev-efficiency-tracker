@@ -23,7 +23,7 @@ Usable battery capacity must be greater than 10 kWh and no more than 300 kWh. Th
 
 ## Charging timestamps
 
-Charging-session timestamps are stored as timezone-naive local wall-clock values. A value entered as `2024-12-31 16:49` is saved and displayed as `2024-12-31 16:49`; the application does not convert it to UTC. Existing records are not shifted during upgrade because their original timezone provenance is unknown.
+Set `TZ` to the deployment's IANA timezone, such as `Asia/Kuala_Lumpur`. The frontend interprets entered wall-clock values in that timezone, converts them to UTC for storage, and converts stored UTC timestamps back to `TZ` for display and editing. Existing records are not automatically shifted during upgrade because their original timezone provenance is unknown.
 
 ## Docker Compose with SQLite
 
@@ -40,6 +40,7 @@ services:
       - ./data:/data
     environment:
       APP_VERSION: "1.4.2"
+      TZ: "Asia/Kuala_Lumpur"
       DB_TYPE: "sqlite"
       SQLITE_PATH: "/data/ev_tracker.db"
       WEB_AUTH_ENABLED: "${WEB_AUTH_ENABLED:-false}"
@@ -71,6 +72,7 @@ services:
       - "4886:80"
     environment:
       APP_VERSION: "1.4.2"
+      TZ: "Asia/Kuala_Lumpur"
       DB_TYPE: "postgres"
       POSTGRES_HOST: "${POSTGRES_HOST}"
       POSTGRES_PORT: "${POSTGRES_PORT:-5432}"
@@ -91,6 +93,7 @@ Use a dedicated PostgreSQL role and database; do not commit their real names or 
 |---|---|---|
 | `APP_VERSION` | `1.4.2` | Displayed application version |
 | `APP_BUILD_SHA` | `unknown` | Optional build commit identifier |
+| `TZ` | `UTC` | IANA timezone used by the frontend, for example `Asia/Kuala_Lumpur` |
 | `DB_TYPE` | `sqlite` | `sqlite` or `postgres` |
 | `SQLITE_PATH` | `/data/ev_tracker.db` | SQLite database path |
 | `POSTGRES_HOST` | required for PostgreSQL | PostgreSQL hostname |
@@ -128,7 +131,7 @@ Verify `/api/charges`, `/api/settings`, and `/api/providers` after migration.
 2. Build or pull v1.4.2 and recreate the container.
 3. Existing data, settings, and providers are preserved.
 4. Review the configured battery capacity; values outside `(10, 300]` must be corrected before Settings can be saved.
-5. Existing timestamps are not modified. New and edited records preserve the entered local wall-clock time.
+5. Set `TZ` before entering new records. Existing timestamps are not modified; new and edited records are stored in UTC and displayed in `TZ`.
 
 ## Development
 

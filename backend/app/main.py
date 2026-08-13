@@ -1,18 +1,25 @@
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal, Optional
 from urllib.parse import quote_plus
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import Boolean, DateTime, Float, Integer, String, Text, create_engine, inspect, select, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 
 APP_VERSION = os.getenv("APP_VERSION", "1.4.2")
 APP_BUILD_SHA = os.getenv("APP_BUILD_SHA", "unknown")
 DB_TYPE = os.getenv("DB_TYPE", "sqlite").strip().lower()
+APP_TIMEZONE = os.getenv("TZ", "UTC").strip()
+
+try:
+    from zoneinfo import ZoneInfo
+    ZoneInfo(APP_TIMEZONE)
+except Exception as exc:
+    raise RuntimeError(f"TZ must be a valid IANA timezone, got: {APP_TIMEZONE}") from exc
 
 DEFAULT_PROVIDERS = []
 
@@ -119,6 +126,13 @@ class ChargeCreate(BaseModel):
     location: Optional[str] = None
     notes: Optional[str] = None
 
+    @field_validator("charged_at")
+    @classmethod
+    def require_aware_timestamp(cls, value):
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("charged_at must include a UTC offset")
+        return value.astimezone(timezone.utc).replace(tzinfo=None)
+
 
 class SettingsIn(BaseModel):
     vehicle_name: str = "My EV"
@@ -149,8 +163,10 @@ def previous_charge(session, charge):
 
 
 def serialize(c, prev, s):
+    charged_at = c.charged_at
+    charged_at_utc = (charged_at.replace(tzinfo=timezone.utc) if charged_at.tzinfo is None else charged_at.astimezone(timezone.utc)).isoformat().replace("+00:00", "Z")
     r = {
-        "id": c.id, "charged_at": c.charged_at, "odometer_km": round(c.odometer_km),
+        "id": c.id, "charged_at": charged_at_utc, "odometer_km": round(c.odometer_km),
         "soc_before": round(c.soc_before), "soc_after": round(c.soc_after),
         "kwh_charged": c.kwh_charged, "amount_paid": c.amount_paid,
         "connector_type": c.connector_type, "provider": c.provider, "location": c.location, "notes": c.notes,
@@ -177,12 +193,12 @@ def serialize(c, prev, s):
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "database": DB_TYPE}
+    return {"status": "ok", "database": DB_TYPE, "timezone": APP_TIMEZONE}
 
 
 @app.get("/api/version")
 def version():
-    return {"version": APP_VERSION, "build_sha": APP_BUILD_SHA, "database": DB_TYPE}
+    return {"version": APP_VERSION, "build_sha": APP_BUILD_SHA, "database": DB_TYPE, "timezone": APP_TIMEZONE}
 
 
 @app.get("/api/settings")

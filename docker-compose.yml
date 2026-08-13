@@ -9,6 +9,7 @@ services:
       - ./data:/data
     environment:
       APP_VERSION: "1.4.2"
+      TZ: "Asia/Kuala_Lumpur"
       DB_TYPE: "sqlite"
       SQLITE_PATH: "/data/ev_tracker.db"
       WEB_AUTH_ENABLED: "false"
