@@ -2,10 +2,7 @@ name: Build and publish Docker image
 
 on:
   release:
-    types: [published]
-on:
   workflow_dispatch:
-  release:
     types: [published]
 
 env:
