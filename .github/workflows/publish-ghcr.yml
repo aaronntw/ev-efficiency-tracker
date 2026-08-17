@@ -7,8 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Version/tag to publish, e.g. v1.4.2"
+        description: "Release tag to publish, e.g. v1.4.2"
         required: true
+        default: "v1.4.2"
 
 env:
   REGISTRY: ghcr.io
@@ -36,10 +37,15 @@ jobs:
           echo "tag=$VERSION" >> "$GITHUB_OUTPUT"
           echo "app_version=${VERSION#v}" >> "$GITHUB_OUTPUT"
 
-      - name: Checkout repository
+      - name: Checkout release tag
         uses: actions/checkout@v6
         with:
           ref: ${{ steps.version.outputs.tag }}
+
+      - name: Get commit SHA
+        id: commit
+        shell: bash
+        run: echo "sha=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Log in to GHCR
         uses: docker/login-action@v3
@@ -58,10 +64,11 @@ jobs:
           push: true
           build-args: |
             APP_VERSION=${{ steps.version.outputs.app_version }}
-            APP_BUILD_SHA=${{ github.sha }}
+            APP_BUILD_SHA=${{ steps.commit.outputs.sha }}
           tags: |
             ghcr.io/${{ github.repository }}:${{ steps.version.outputs.tag }}
             ghcr.io/${{ github.repository }}:latest
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.version=${{ steps.version.outputs.tag }}
+            org.opencontainers.image.revision=${{ steps.commit.outputs.sha }}
