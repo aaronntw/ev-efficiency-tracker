@@ -1,74 +1,130 @@
 name: Build and publish Docker image
 
 on:
+  push:
+    branches: [main]
+    paths: [frontend/package.json]
   release:
     types: [published]
-
   workflow_dispatch:
     inputs:
       version:
-        description: "Release tag to publish, e.g. v1.4.2"
+        description: 'Existing release tag to publish, e.g. v1.4.3'
         required: true
-        default: "v1.4.2"
+        default: 'v1.4.3'
 
-env:
-  REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
+concurrency:
+  group: ghcr-release
+  cancel-in-progress: false
 
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
-
     permissions:
-      contents: read
+      contents: write
       packages: write
-
     steps:
-      - name: Resolve version
-        id: version
-        shell: bash
-        run: |
-          if [ "${{ github.event_name }}" = "release" ]; then
-            VERSION="${{ github.event.release.tag_name }}"
-          else
-            VERSION="${{ inputs.version }}"
-          fi
-
-          echo "tag=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "app_version=${VERSION#v}" >> "$GITHUB_OUTPUT"
-
-      - name: Checkout release tag
+      - name: Checkout source
         uses: actions/checkout@v6
         with:
-          ref: ${{ steps.version.outputs.tag }}
+          ref: ${{ github.event.release.tag_name || inputs.version || github.sha }}
 
-      - name: Get commit SHA
-        id: commit
-        shell: bash
-        run: echo "sha=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+      - name: Resolve and validate version
+        id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          REQUESTED_TAG: ${{ github.event.release.tag_name || inputs.version }}
+        run: |
+          APP_VERSION=$(node -p "require('./frontend/package.json').version")
+          [[ "$APP_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          TAG="v$APP_VERSION"
+          if [ "$EVENT_NAME" != push ]; then
+            test "$TAG" = "$REQUESTED_TAG"
+          elif gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" >/dev/null 2>&1; then
+            echo "Refusing to overwrite existing tag $TAG" >&2
+            exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "app_version=$APP_VERSION" >> "$GITHUB_OUTPUT"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Frontend regression tests and build
+        working-directory: frontend
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+          npx playwright test
+          npm run build
 
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
-          registry: ${{ env.REGISTRY }}
+          registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build and push
+      - name: Build and push versioned image
+        id: build
         uses: docker/build-push-action@v6
         with:
           context: .
           push: true
           build-args: |
             APP_VERSION=${{ steps.version.outputs.app_version }}
-            APP_BUILD_SHA=${{ steps.commit.outputs.sha }}
-          tags: |
-            ghcr.io/${{ github.repository }}:${{ steps.version.outputs.tag }}
-            ghcr.io/${{ github.repository }}:latest
+            APP_BUILD_SHA=${{ steps.version.outputs.sha }}
+          tags: ghcr.io/${{ github.repository }}:${{ steps.version.outputs.tag }}
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.version=${{ steps.version.outputs.tag }}
-            org.opencontainers.image.revision=${{ steps.commit.outputs.sha }}
+            org.opencontainers.image.revision=${{ steps.version.outputs.sha }}
+
+      - name: Verify anonymous GHCR pull and running version
+        env:
+          IMAGE: ghcr.io/${{ github.repository }}:${{ steps.version.outputs.tag }}
+          EXPECTED_VERSION: ${{ steps.version.outputs.app_version }}
+          EXPECTED_SHA: ${{ steps.version.outputs.sha }}
+          EXPECTED_DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          PULL_CONFIG=$(mktemp -d)
+          docker --config "$PULL_CONFIG" pull "$IMAGE"
+          docker image inspect "$IMAGE" --format '{{json .RepoDigests}}' | grep -F "$EXPECTED_DIGEST"
+          docker run -d --name release-smoke -p 127.0.0.1:4886:80 "$IMAGE"
+          trap 'docker logs release-smoke; docker rm -fv release-smoke; rm -rf "$PULL_CONFIG"' EXIT
+          curl --retry 20 --retry-connrefused --retry-delay 2 --fail http://127.0.0.1:4886/api/health
+          curl --fail http://127.0.0.1:4886/api/version > /tmp/release-version.json
+          python3 - <<'PY'
+          import json, os
+          version = json.load(open('/tmp/release-version.json'))
+          assert version['version'] == os.environ['EXPECTED_VERSION'], version
+          assert version['build_sha'] == os.environ['EXPECTED_SHA'], version
+          print(version)
+          PY
+          curl --fail http://127.0.0.1:4886/ | grep 'EV Efficiency Tracker'
+          echo "Verified anonymous pull: $IMAGE@$EXPECTED_DIGEST" >> "$GITHUB_STEP_SUMMARY"
+          cat /tmp/release-version.json >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Promote verified image to latest
+        env:
+          IMAGE: ghcr.io/${{ github.repository }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: docker buildx imagetools create --tag "$IMAGE:latest" "$IMAGE@$DIGEST"
+
+      - name: Create tag and GitHub release after verification
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+          RELEASE_SHA: ${{ steps.version.outputs.sha }}
+        run: gh release create "$TAG" --target "$RELEASE_SHA" --title "$TAG" --notes-file RELEASE_NOTES.md

@@ -29,3 +29,6 @@ README.old.md
 *.swp
 *~
 .DS_Store
+
+frontend/test-results/
+frontend/playwright-report/

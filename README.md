@@ -2,7 +2,7 @@
 
 A self-hosted web application for tracking EV charging sessions, energy use, cost, and efficiency. Data remains under the operator's control and can be stored in SQLite or PostgreSQL.
 
-**Current version:** v1.4.2
+**Current version:** v1.4.3
 
 ## Features
 
@@ -10,6 +10,7 @@ A self-hosted web application for tracking EV charging sessions, energy use, cos
 - Dashboard filters for all time, month, year, and custom date ranges
 - Efficiency, cost-per-distance, energy, spend, and AC/DC breakdowns
 - Configurable vehicle, battery capacity, range, currency, and charging providers
+- Persistent light/dark theme switch with browser preference on first visit
 - CSV export and optional HTTP Basic Authentication
 - SQLite and PostgreSQL backends
 
@@ -33,13 +34,13 @@ SQLite is the simplest single-user deployment. Persist `/data`, which contains `
 services:
   ev-tracker:
     build: .
-    image: ev-efficiency-tracker:v1.4.2
+    image: ev-efficiency-tracker:v1.4.3
     ports:
       - "4886:80"
     volumes:
       - ./data:/data
     environment:
-      APP_VERSION: "1.4.2"
+      APP_VERSION: "1.4.3"
       TZ: "Asia/Kuala_Lumpur"
       DB_TYPE: "sqlite"
       SQLITE_PATH: "/data/ev_tracker.db"
@@ -67,11 +68,11 @@ PostgreSQL deployments do not require an EV Tracker `/data` volume because appli
 services:
   ev-tracker:
     build: .
-    image: ev-efficiency-tracker:v1.4.2
+    image: ev-efficiency-tracker:v1.4.3
     ports:
       - "4886:80"
     environment:
-      APP_VERSION: "1.4.2"
+      APP_VERSION: "1.4.3"
       TZ: "Asia/Kuala_Lumpur"
       DB_TYPE: "postgres"
       POSTGRES_HOST: "${POSTGRES_HOST}"
@@ -91,7 +92,7 @@ Use a dedicated PostgreSQL role and database; do not commit their real names or 
 
 | Variable | Default | Description |
 |---|---|---|
-| `APP_VERSION` | `1.4.2` | Displayed application version |
+| `APP_VERSION` | `1.4.3` | Displayed application version |
 | `APP_BUILD_SHA` | `unknown` | Optional build commit identifier |
 | `TZ` | `UTC` | IANA timezone used by the frontend, for example `Asia/Kuala_Lumpur` |
 | `DB_TYPE` | `sqlite` | `sqlite` or `postgres` |
@@ -119,16 +120,25 @@ docker run --rm `
   -e POSTGRES_DB="${env:POSTGRES_DB}" `
   -e POSTGRES_USER="${env:POSTGRES_USER}" `
   -e POSTGRES_PASSWORD="${env:POSTGRES_PASSWORD}" `
-  ev-efficiency-tracker:v1.4.2 `
+  ev-efficiency-tracker:v1.4.3 `
   -m backend.app.migrate_sqlite_to_postgres /data/ev_tracker.db
 ```
 
 Verify `/api/charges`, `/api/settings`, and `/api/providers` after migration.
 
-## Upgrade from v1.4.1
+## Upgrade from v1.4.2
 
 1. Back up the database.
-2. Build or pull v1.4.2 and recreate the container.
+2. Pull `ghcr.io/aaronntw/ev-efficiency-tracker:v1.4.3` and recreate the container.
+3. Remove any old `APP_VERSION` environment override or set it to `1.4.3`.
+4. Existing data is preserved; no schema migration is needed.
+
+The header switch changes between light and dark themes without losing form input. Your selection is saved in this browser. The first visit follows your browser color preference. Editing a record returns to the page where the edit started.
+
+## Older upgrade notes (v1.4.1)
+
+1. Back up the database.
+2. Build or pull v1.4.3 and recreate the container.
 3. Existing data, settings, and providers are preserved.
 4. Review the configured battery capacity; values outside `(10, 300]` must be corrected before Settings can be saved.
 5. Set `TZ` before entering new records. Existing timestamps are not modified; new and edited records are stored in UTC and displayed in `TZ`.
@@ -138,8 +148,12 @@ Verify `/api/charges`, `/api/settings`, and `/api/providers` after migration.
 ```bash
 git clone https://github.com/aaronntw/ev-efficiency-tracker.git
 cd ev-efficiency-tracker
-docker build --build-arg APP_VERSION=1.4.2 -t ev-efficiency-tracker:v1.4.2 .
+docker build --build-arg APP_VERSION=1.4.3 -t ev-efficiency-tracker:v1.4.3 .
 ```
+
+Regression tests: `cd frontend && npm ci && npx playwright install chromium && npx playwright test`.
+
+Updating `frontend/package.json` on `main` triggers the release workflow. It runs browser tests, builds and pushes the versioned image, verifies an anonymous pull and container health/version, promotes the image to `latest`, and creates the corresponding tag and GitHub release. Existing version tags cannot be overwritten by this automatic path.
 
 The stack uses React/Vite, FastAPI, SQLAlchemy, Nginx, and Docker.
 
@@ -152,3 +166,4 @@ The stack uses React/Vite, FastAPI, SQLAlchemy, Nginx, and Docker.
 ## License
 
 See the repository license file for licensing information.
+

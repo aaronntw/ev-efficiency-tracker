@@ -8,9 +8,10 @@ services:
     volumes:
       - ./data:/data
     environment:
-      APP_VERSION: "1.4.2"
+      APP_VERSION: "1.4.3"
       TZ: "Asia/Kuala_Lumpur"
       DB_TYPE: "sqlite"
       SQLITE_PATH: "/data/ev_tracker.db"
       WEB_AUTH_ENABLED: "false"
     restart: unless-stopped
+

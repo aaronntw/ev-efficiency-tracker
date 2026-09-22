@@ -2,7 +2,7 @@
 FROM node:22-alpine AS frontend-build
 WORKDIR /frontend
 COPY frontend/package*.json ./
-RUN npm install
+RUN npm ci
 COPY frontend/ .
 RUN npm run build
 
@@ -10,7 +10,7 @@ RUN npm run build
 FROM python:3.12-slim
 WORKDIR /app
 
-ARG APP_VERSION=1.4.2
+ARG APP_VERSION=1.4.3
 ARG APP_BUILD_SHA=unknown
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -38,3 +38,4 @@ RUN rm -f /etc/nginx/sites-enabled/default \
 EXPOSE 80
 VOLUME ["/data"]
 ENTRYPOINT ["/entrypoint.sh"]
+
