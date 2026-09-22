@@ -7,6 +7,6 @@
 
 Container: `ghcr.io/aaronntw/ev-efficiency-tracker:v1.4.3`
 
-The release workflow verifies an anonymous GHCR pull and checks the running container's health, version, and commit before publishing this release. No database schema changes are required.
+The release workflow verifies an authenticated GHCR pull and checks the running container's health, version, and commit before publishing this release. No database schema changes are required.
 
 To upgrade, back up the database, use the versioned image above, and recreate the container. Remove an old `APP_VERSION` environment override or set it to `1.4.3` so the displayed version matches the image.

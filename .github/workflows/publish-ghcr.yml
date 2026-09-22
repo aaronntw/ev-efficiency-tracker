@@ -89,7 +89,7 @@ jobs:
             org.opencontainers.image.version=${{ steps.version.outputs.tag }}
             org.opencontainers.image.revision=${{ steps.version.outputs.sha }}
 
-      - name: Verify anonymous GHCR pull and running version
+      - name: Verify authenticated GHCR pull and running version
         env:
           IMAGE: ghcr.io/${{ github.repository }}:${{ steps.version.outputs.tag }}
           EXPECTED_VERSION: ${{ steps.version.outputs.app_version }}
@@ -97,11 +97,10 @@ jobs:
           EXPECTED_DIGEST: ${{ steps.build.outputs.digest }}
         run: |
           set -euo pipefail
-          PULL_CONFIG=$(mktemp -d)
-          docker --config "$PULL_CONFIG" pull "$IMAGE"
+          docker pull "$IMAGE"
           docker image inspect "$IMAGE" --format '{{json .RepoDigests}}' | grep -F "$EXPECTED_DIGEST"
           docker run -d --name release-smoke -p 127.0.0.1:4886:80 "$IMAGE"
-          trap 'docker logs release-smoke; docker rm -fv release-smoke; rm -rf "$PULL_CONFIG"' EXIT
+          trap 'docker logs release-smoke; docker rm -fv release-smoke' EXIT
           curl --retry 20 --retry-connrefused --retry-delay 2 --fail http://127.0.0.1:4886/api/health
           curl --fail http://127.0.0.1:4886/api/version > /tmp/release-version.json
           python3 - <<'PY'
@@ -112,7 +111,7 @@ jobs:
           print(version)
           PY
           curl --fail http://127.0.0.1:4886/ | grep 'EV Efficiency Tracker'
-          echo "Verified anonymous pull: $IMAGE@$EXPECTED_DIGEST" >> "$GITHUB_STEP_SUMMARY"
+          echo "Verified authenticated pull: $IMAGE@$EXPECTED_DIGEST" >> "$GITHUB_STEP_SUMMARY"
           cat /tmp/release-version.json >> "$GITHUB_STEP_SUMMARY"
 
       - name: Promote verified image to latest

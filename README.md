@@ -153,7 +153,7 @@ docker build --build-arg APP_VERSION=1.4.3 -t ev-efficiency-tracker:v1.4.3 .
 
 Regression tests: `cd frontend && npm ci && npx playwright install chromium && npx playwright test`.
 
-Updating `frontend/package.json` on `main` triggers the release workflow. It runs browser tests, builds and pushes the versioned image, verifies an anonymous pull and container health/version, promotes the image to `latest`, and creates the corresponding tag and GitHub release. Existing version tags cannot be overwritten by this automatic path.
+Updating `frontend/package.json` on `main` triggers the release workflow. It runs browser tests, builds and pushes the versioned image, verifies an authenticated pull and container health/version, promotes the image to `latest`, and creates the corresponding tag and GitHub release. Existing version tags cannot be overwritten by this automatic path.
 
 The stack uses React/Vite, FastAPI, SQLAlchemy, Nginx, and Docker.
 
