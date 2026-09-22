@@ -3,7 +3,7 @@ name: Build and publish Docker image
 on:
   push:
     branches: [main]
-    paths: [frontend/package.json]
+    paths: [frontend/package.json, .github/workflows/publish-ghcr.yml]
   release:
     types: [published]
   workflow_dispatch:
@@ -101,7 +101,7 @@ jobs:
           docker image inspect "$IMAGE" --format '{{json .RepoDigests}}' | grep -F "$EXPECTED_DIGEST"
           docker run -d --name release-smoke -p 127.0.0.1:4886:80 "$IMAGE"
           trap 'docker logs release-smoke; docker rm -fv release-smoke' EXIT
-          curl --retry 20 --retry-connrefused --retry-delay 2 --fail http://127.0.0.1:4886/api/health
+          curl --retry 20 --retry-all-errors --retry-delay 2 --max-time 5 --retry-max-time 90 --fail http://127.0.0.1:4886/api/health
           curl --fail http://127.0.0.1:4886/api/version > /tmp/release-version.json
           python3 - <<'PY'
           import json, os
