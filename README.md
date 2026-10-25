@@ -2,7 +2,7 @@
 
 A self-hosted web application for tracking EV charging sessions, energy use, cost, and efficiency. Data remains under the operator's control and can be stored in SQLite or PostgreSQL.
 
-**Current version:** v1.4.3
+**Current version:** v1.4.4
 
 ## Features
 
@@ -34,13 +34,13 @@ SQLite is the simplest single-user deployment. Persist `/data`, which contains `
 services:
   ev-tracker:
     build: .
-    image: ev-efficiency-tracker:v1.4.3
+    image: ev-efficiency-tracker:v1.4.4
     ports:
       - "4886:80"
     volumes:
       - ./data:/data
     environment:
-      APP_VERSION: "1.4.3"
+      APP_VERSION: "1.4.4"
       TZ: "Asia/Kuala_Lumpur"
       DB_TYPE: "sqlite"
       SQLITE_PATH: "/data/ev_tracker.db"
@@ -68,11 +68,11 @@ PostgreSQL deployments do not require an EV Tracker `/data` volume because appli
 services:
   ev-tracker:
     build: .
-    image: ev-efficiency-tracker:v1.4.3
+    image: ev-efficiency-tracker:v1.4.4
     ports:
       - "4886:80"
     environment:
-      APP_VERSION: "1.4.3"
+      APP_VERSION: "1.4.4"
       TZ: "Asia/Kuala_Lumpur"
       DB_TYPE: "postgres"
       POSTGRES_HOST: "${POSTGRES_HOST}"
@@ -92,7 +92,7 @@ Use a dedicated PostgreSQL role and database; do not commit their real names or 
 
 | Variable | Default | Description |
 |---|---|---|
-| `APP_VERSION` | `1.4.3` | Displayed application version |
+| `APP_VERSION` | `1.4.4` | Displayed application version |
 | `APP_BUILD_SHA` | `unknown` | Optional build commit identifier |
 | `TZ` | `UTC` | IANA timezone used by the frontend, for example `Asia/Kuala_Lumpur` |
 | `DB_TYPE` | `sqlite` | `sqlite` or `postgres` |
@@ -120,17 +120,31 @@ docker run --rm `
   -e POSTGRES_DB="${env:POSTGRES_DB}" `
   -e POSTGRES_USER="${env:POSTGRES_USER}" `
   -e POSTGRES_PASSWORD="${env:POSTGRES_PASSWORD}" `
-  ev-efficiency-tracker:v1.4.3 `
+  ev-efficiency-tracker:v1.4.4 `
   -m backend.app.migrate_sqlite_to_postgres /data/ev_tracker.db
 ```
 
 Verify `/api/charges`, `/api/settings`, and `/api/providers` after migration.
 
+## Upgrade from v1.4.3
+
+v1.4.4 refreshes the October 2026 security fixes: Node 22.23.4, Python 3.12.15,
+pip 26.2.2, Vite 7.3.7, source-map-js 1.2.2, FastAPI 0.162.0,
+Starlette 1.10.0, and Psycopg 3.3.6. Python dependencies are locked with
+distribution hashes. Production builds refresh Debian security updates and
+verify the Nginx and certificate-store security floors.
+
+No database schema change is required. Back up your database, pull
+`ghcr.io/aaronntw/ev-efficiency-tracker:v1.4.4`, and recreate the container.
+Pulling alone does not replace a running container. Keep your existing volumes,
+database connection settings, timezone, and authentication configuration.
+This release does not update an external PostgreSQL server, reverse proxy, or host OS.
+
 ## Upgrade from v1.4.2
 
 1. Back up the database.
-2. Pull `ghcr.io/aaronntw/ev-efficiency-tracker:v1.4.3` and recreate the container.
-3. Remove any old `APP_VERSION` environment override or set it to `1.4.3`.
+2. Pull `ghcr.io/aaronntw/ev-efficiency-tracker:v1.4.4` and recreate the container.
+3. Remove any old `APP_VERSION` environment override or set it to `1.4.4`.
 4. Existing data is preserved; no schema migration is needed.
 
 The header switch changes between light and dark themes without losing form input. Your selection is saved in this browser. The first visit follows your browser color preference. Editing a record returns to the page where the edit started.
@@ -138,7 +152,7 @@ The header switch changes between light and dark themes without losing form inpu
 ## Older upgrade notes (v1.4.1)
 
 1. Back up the database.
-2. Build or pull v1.4.3 and recreate the container.
+2. Build or pull v1.4.4 and recreate the container.
 3. Existing data, settings, and providers are preserved.
 4. Review the configured battery capacity; values outside `(10, 300]` must be corrected before Settings can be saved.
 5. Set `TZ` before entering new records. Existing timestamps are not modified; new and edited records are stored in UTC and displayed in `TZ`.
@@ -148,12 +162,29 @@ The header switch changes between light and dark themes without losing form inpu
 ```bash
 git clone https://github.com/aaronntw/ev-efficiency-tracker.git
 cd ev-efficiency-tracker
-docker build --build-arg APP_VERSION=1.4.3 -t ev-efficiency-tracker:v1.4.3 .
+docker build --build-arg APP_VERSION=1.4.4 -t ev-efficiency-tracker:v1.4.4 .
 ```
 
 Regression tests: `cd frontend && npm ci && npx playwright install chromium && npx playwright test`.
 
-Updating `frontend/package.json` on `main` triggers the release workflow. It runs browser tests, builds and pushes the versioned image, verifies an authenticated pull and container health/version, promotes the image to `latest`, and creates the corresponding tag and GitHub release. Existing version tags cannot be overwritten by this automatic path.
+Pull requests run API checks against SQLite and PostgreSQL, desktop/mobile browser tests,
+both dependency-lock audits, and a fresh Linux container build with Basic Auth checks.
+Pushes to `main` run the same checks before publishing a new versioned image,
+verifying its pull and health/version, promoting it to `latest`, and creating the
+version tag and GitHub release. Bump the application version for every release.
+Existing version tags cannot be overwritten by this automatic path.
+
+Use the Node version in `.node-version`. Install backend dependencies with
+`python -m pip install --require-hashes --only-binary=:all: -r backend/requirements.txt`
+after updating pip to at least 26.2.2. Run API regressions from the repository root:
+`python -m unittest discover -s backend/tests -v`. Tests use a temporary SQLite
+database unless PostgreSQL test connection variables are explicitly supplied.
+
+Edit `backend/requirements.in` for direct Python dependencies, then regenerate
+`backend/requirements.txt` using uv >=0.13.4:
+`uv pip compile --universal --python-version 3.12 --generate-hashes --output-file backend/requirements.txt backend/requirements.in`.
+Review and audit the resulting full lockfile. Docker base images and GitHub Actions
+are pinned to immutable digests/commits; Dependabot checks for weekly updates.
 
 The stack uses React/Vite, FastAPI, SQLAlchemy, Nginx, and Docker.
 

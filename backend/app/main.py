@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import Boolean, DateTime, Float, Integer, String, Text, create_engine, inspect, select, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 
-APP_VERSION = os.getenv("APP_VERSION", "1.4.3")
+APP_VERSION = os.getenv("APP_VERSION", "1.4.4")
 APP_BUILD_SHA = os.getenv("APP_BUILD_SHA", "unknown")
 DB_TYPE = os.getenv("DB_TYPE", "sqlite").strip().lower()
 APP_TIMEZONE = os.getenv("TZ", "UTC").strip()

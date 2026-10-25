@@ -26,7 +26,7 @@ function App(){
   const toggleTheme=()=>{const next=theme==='dark'?'light':'dark';setTheme(next);saveTheme(next)}
   const [charges,setCharges]=useState([]),[providers,setProviders]=useState([])
   const [settings,setSettings]=useState({vehicle_name:'My EV',usable_battery_kwh:60,maximum_range_km:400,currency:'USD'})
-  const [version,setVersion]=useState({version:'1.4.3',build_sha:'unknown',database:'unknown',timezone:'UTC'})
+  const [version,setVersion]=useState({version:'1.4.4',build_sha:'unknown',database:'unknown',timezone:'UTC'})
   const [form,setForm]=useState(blank()),[tab,setTab]=useState('dashboard'),[error,setError]=useState(''),[editingId,setEditingId]=useState(null)
   const [settingsMessage,setSettingsMessage]=useState(''),[newProvider,setNewProvider]=useState('')
   const [dashboardPeriod,setDashboardPeriod]=useState('all'),[selectedMonth,setSelectedMonth]=useState(''),[selectedYear,setSelectedYear]=useState(''),[customStartDate,setCustomStartDate]=useState(''),[customEndDate,setCustomEndDate]=useState('')
