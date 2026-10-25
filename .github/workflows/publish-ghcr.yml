@@ -3,38 +3,105 @@ name: Build and publish Docker image
 on:
   push:
     branches: [main]
-    paths: [frontend/package.json, .github/workflows/publish-ghcr.yml]
-  release:
-    types: [published]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
     inputs:
       version:
-        description: 'Existing release tag to publish, e.g. v1.4.3'
+        description: 'Existing release tag to publish, e.g. v1.4.4'
         required: true
-        default: 'v1.4.3'
+        default: 'v1.4.4'
 
 concurrency:
-  group: ghcr-release
+  group: ghcr-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: false
 
+permissions:
+  contents: read
+
 jobs:
+  validate:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18.6
+        env:
+          POSTGRES_USER: ev_test
+          POSTGRES_PASSWORD: ci-test-only
+          POSTGRES_DB: ev_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U ev_test"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ inputs.version || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .node-version
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12.15'
+      - name: Install verified Python dependencies
+        run: |
+          python -m pip install --no-deps 'pip @ https://files.pythonhosted.org/packages/3f/06/3e4420302363fbb71be3c7f35ce042f54bfca330e3e66b3a2e3c4cca579f/pip-26.2.2-py3-none-any.whl#sha256=fd7f4dfa8190e014013b9f08f3e973f4e4c26ffd179a204895533a7254813a70'
+          python -m pip install --require-hashes --only-binary=:all: -r backend/requirements.txt
+          python -m pip check
+      - name: Audit both dependency locks
+        run: python scripts/audit_dependencies.py
+      - name: Test SQLite API
+        run: python -m unittest discover -s backend/tests -v
+      - name: Test PostgreSQL API
+        env:
+          DB_TYPE: postgres
+          POSTGRES_HOST: 127.0.0.1
+          POSTGRES_DB: ev_test
+          POSTGRES_USER: ev_test
+          POSTGRES_PASSWORD: ci-test-only
+        run: python -m unittest discover -s backend/tests -v
+      - name: Frontend regression tests and build
+        working-directory: frontend
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+          npx playwright test
+          npm run build
+      - name: Build fresh production image and verify runtime floors
+        run: docker build --pull --no-cache -t ev-tracker:test .
+      - name: Test container API and Basic Auth
+        env:
+          TEST_BASE_URL: http://127.0.0.1:4886
+          TEST_AUTH_USERNAME: release-test
+          TEST_AUTH_PASSWORD: ci-container-only
+        run: |
+          docker run -d --name release-test -p 127.0.0.1:4886:80 -e WEB_AUTH_ENABLED=true -e WEB_AUTH_USERNAME="$TEST_AUTH_USERNAME" -e WEB_AUTH_PASSWORD="$TEST_AUTH_PASSWORD" ev-tracker:test
+          trap 'docker logs release-test; docker rm -fv release-test' EXIT
+          python -m unittest discover -s backend/tests -v
+
   build-and-push:
+    needs: validate
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       contents: write
       packages: write
     steps:
       - name: Checkout source
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
-          ref: ${{ github.event.release.tag_name || inputs.version || github.sha }}
+          ref: ${{ inputs.version || github.sha }}
+          persist-credentials: false
 
       - name: Resolve and validate version
         id: version
         env:
           GH_TOKEN: ${{ github.token }}
           EVENT_NAME: ${{ github.event_name }}
-          REQUESTED_TAG: ${{ github.event.release.tag_name || inputs.version }}
+          REQUESTED_TAG: ${{ inputs.version }}
         run: |
           APP_VERSION=$(node -p "require('./frontend/package.json').version")
           [[ "$APP_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
@@ -49,37 +116,26 @@ jobs:
           echo "app_version=$APP_VERSION" >> "$GITHUB_OUTPUT"
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
-      - name: Set up Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
-
-      - name: Frontend regression tests and build
-        working-directory: frontend
-        run: |
-          npm ci
-          npx playwright install --with-deps chromium
-          npx playwright test
-          npm run build
-
       - name: Log in to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
       - name: Build and push versioned image
         id: build
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
           push: true
+          pull: true
+          no-cache: true
+          sbom: true
+          provenance: mode=max
           build-args: |
             APP_VERSION=${{ steps.version.outputs.app_version }}
             APP_BUILD_SHA=${{ steps.version.outputs.sha }}

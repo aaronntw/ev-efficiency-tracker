@@ -18,7 +18,7 @@ test.beforeEach(async ({ page }) => {
       '/api/charges': [record],
       '/api/settings': { vehicle_name: 'Test EV', usable_battery_kwh: 60, maximum_range_km: 400, currency: 'RM' },
       '/api/providers': [{ id: 1, name: 'Test provider' }],
-      '/api/version': { version: '1.4.3', build_sha: 'test', database: 'sqlite', timezone: 'UTC' },
+      '/api/version': { version: '1.4.4', build_sha: 'test', database: 'sqlite', timezone: 'UTC' },
     }
     return route.fulfill({ json: data[path] ?? {} })
   })
